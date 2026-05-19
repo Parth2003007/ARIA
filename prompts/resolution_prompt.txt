@@ -36,6 +36,8 @@ RULES:
 - tool_chain must always be a list even if only one tool
 - Maximum 3 tools in the chain
 - Only use tool names exactly as listed above
+- For account tools, use the provided Resolved account value as username when it is known
+- Never output placeholders like "user_username", "user's_username", or "username"
 - Drive names must be exactly: C:/, D:/, E:/
 - Service names must be lowercase exactly: vpn, email, database, wifi, printing
 - Never guess usernames or service names

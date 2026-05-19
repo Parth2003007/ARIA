@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from guardrails import run_security_checks, filter_output
 from tools import AVAILABLE_TOOLS
 from state import append_audit
+from mock_system import SYSTEM_STATE
 
 # Load environment variables from .env file (local development)
 load_dotenv()
@@ -56,6 +57,31 @@ MODELS = {
 # ═════════════════════════════════════════════════════════════════════════════
 
 _clients = {}
+
+EMPLOYEE_USERNAME_MAP = {
+    "EMP-4821": "john.doe",
+    "EMP-1032": "jane.smith",
+    "EMP-2201": "bob.jones",
+    "EMP-3341": "sara.chen",
+}
+
+ACCOUNT_TOOLS = {
+    "check_account_status",
+    "unlock_account",
+    "send_password_reset",
+    "extend_password_expiry",
+    "install_software",
+}
+
+PLACEHOLDER_USERNAMES = {
+    "",
+    "user",
+    "username",
+    "user_username",
+    "user's_username",
+    "user.name",
+    "unknown",
+}
 
 def get_client(name: str) -> OpenAI:
     """
@@ -110,6 +136,90 @@ def safe_parse_json(text: str) -> dict | None:
     except (json.JSONDecodeError, AttributeError):
         pass
     return None
+
+
+def submitter_to_username(submitter: str) -> str | None:
+    """
+    Converts a display name such as "John Doe" into the demo username
+    convention "john.doe", returning None if it is not a known user.
+    """
+    candidate = ".".join(submitter.lower().strip().split())
+    return candidate if candidate in SYSTEM_STATE["users"] else None
+
+
+def resolve_account_username(state: dict) -> str | None:
+    """
+    Resolves the account username from deterministic ticket context.
+    Preference order:
+      1. Explicit known username in the original or masked ticket text
+      2. Exact affected_system match from Diagnosis
+      3. Employee ID directory mapping
+      4. Submitter display-name convention
+    """
+    known_users = set(SYSTEM_STATE["users"])
+    text_sources = [
+        state.get("raw_input") or "",
+        state.get("masked_input") or "",
+        state.get("diagnosis", {}).get("affected_system") or "",
+    ]
+
+    for text in text_sources:
+        lowered = text.lower()
+        for username in known_users:
+            if username in lowered:
+                return username
+
+    employee_id = state.get("employee_id") or ""
+    mapped_username = EMPLOYEE_USERNAME_MAP.get(employee_id)
+    if mapped_username in known_users:
+        return mapped_username
+
+    return submitter_to_username(state.get("submitter") or "")
+
+
+def username_needs_resolution(username: object) -> bool:
+    """Returns True when an LLM-supplied username is missing or placeholder-like."""
+    if not isinstance(username, str):
+        return True
+
+    normalized = username.strip().lower()
+    if normalized in SYSTEM_STATE["users"]:
+        return False
+    if normalized in PLACEHOLDER_USERNAMES:
+        return True
+
+    return "user" in normalized and "username" in normalized
+
+
+def normalize_tool_chain_arguments(state: dict, tool_chain: list[dict]) -> list[dict]:
+    """
+    Replaces placeholder account usernames with the submitter's verified demo
+    account before tool execution. The LLM still selects the tool chain; Python
+    resolves identity from trusted ticket metadata.
+    """
+    resolved_username = resolve_account_username(state)
+    if not resolved_username:
+        return tool_chain
+
+    normalized_chain = []
+    replacements = []
+
+    for step in tool_chain:
+        updated_step = dict(step)
+        args = dict(updated_step.get("arguments") or {})
+
+        if updated_step.get("tool") in ACCOUNT_TOOLS and username_needs_resolution(args.get("username")):
+            previous = args.get("username", "")
+            args["username"] = resolved_username
+            updated_step["arguments"] = args
+            replacements.append(f"{updated_step.get('tool')}: {previous!r} -> {resolved_username!r}")
+
+        normalized_chain.append(updated_step)
+
+    if replacements:
+        append_audit(state, event="tool_args_normalized", detail="; ".join(replacements))
+
+    return normalized_chain
 
 
 def call_llm(
@@ -274,6 +384,9 @@ def diagnosis_agent(state: dict) -> dict:
 def resolution_agent(state: dict) -> dict:
     system_prompt = load_prompt("resolution")
     user_message  = (
+        f"Submitter:            {state['submitter']}\n"
+        f"Employee ID:          {state['employee_id']}\n"
+        f"Resolved account:     {resolve_account_username(state) or 'unknown'}\n"
         f"Root cause:           {state['diagnosis']['root_cause']}\n"
         f"Affected system:      {state['diagnosis']['affected_system']}\n"
         f"Diagnosis confidence: {state['diagnosis']['confidence']}\n"
@@ -298,7 +411,7 @@ def resolution_agent(state: dict) -> dict:
         return state
 
     can_fix     = result.get("can_auto_fix", False)
-    tool_chain  = result.get("tool_chain", [])
+    tool_chain  = normalize_tool_chain_arguments(state, result.get("tool_chain", []))
     confidence  = float(result.get("confidence", 0.0))
     explanation = result.get("explanation", "")
 
