@@ -48,6 +48,25 @@ if "history" not in st.session_state:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═════════════════════════════════════════════════════════════════════════════
+
+def render_metrics_bar() -> None:
+    """Renders top-level session metrics from ticket history."""
+    history         = st.session_state["history"]
+    total           = len(history)
+    resolved        = sum(1 for t in history if t["status"] == "auto_resolved")
+    escalated_count = total - resolved
+    rate            = int((resolved / total * 100)) if total > 0 else 0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Tickets Processed", total)
+    m2.metric("Auto-Resolved",     resolved)
+    m3.metric("Escalated",         escalated_count)
+    m4.metric("Resolution Rate",   f"{rate}%")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # HEADER
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -59,17 +78,9 @@ st.caption("Automated Resolution & Incident Agent  ·  AI-powered IT Service Des
 # METRICS BAR
 # ═════════════════════════════════════════════════════════════════════════════
 
-history         = st.session_state["history"]
-total           = len(history)
-resolved        = sum(1 for t in history if t["status"] == "auto_resolved")
-escalated_count = total - resolved
-rate            = int((resolved / total * 100)) if total > 0 else 0
-
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Tickets Processed", total)
-m2.metric("Auto-Resolved",     resolved)
-m3.metric("Escalated",         escalated_count)
-m4.metric("Resolution Rate",   f"{rate}%")
+metrics_placeholder = st.empty()
+with metrics_placeholder.container():
+    render_metrics_bar()
 
 st.divider()
 
@@ -119,7 +130,7 @@ DEMO_TICKETS = {
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# HELPER FUNCTIONS
+# DISPLAY HELPER FUNCTIONS
 # ═════════════════════════════════════════════════════════════════════════════
 
 def render_system_state(snapshot: dict) -> None:
@@ -389,6 +400,8 @@ if submit and ticket_text.strip():
             "time":     state["submitted_at"][11:19],
             "duration": f"{total_time}s",
         })
+        with metrics_placeholder.container():
+            render_metrics_bar()
 
         # Stop if blocked
         if not state["security"]["passed"]:
