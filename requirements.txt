@@ -1,1 +1,3 @@
-nul not found
+streamlit
+openai
+python-dotenv
