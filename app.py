@@ -128,8 +128,15 @@ def render_system_state(snapshot: dict) -> None:
     for username, info in snapshot["users"].items():
         icon   = "🔴" if info["locked"] else "🟢"
         status = "locked" if info["locked"] else "active"
-        st.markdown(f"{icon} `{username}` — {status}")
-
+        expiry = info.get("password_expires_days", 0)
+        if expiry == 0:
+            expiry_note = " · 🔴 password expired"
+        elif expiry <= 7:
+            expiry_note = f" · 🟡 expires in {expiry}d"
+        else:
+            expiry_note = f" · 🟢 valid {expiry}d"
+        st.markdown(f"{icon} `{username}` — {status}{expiry_note}")
+   
     st.divider()
 
     st.caption("**Services**")
