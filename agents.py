@@ -38,8 +38,16 @@ from tools import AVAILABLE_TOOLS
 from state import append_audit
 
 # Load environment variables from .env file
-load_dotenv()
-
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+try:
+    import streamlit as st
+    for key in ["GROQ_API_KEY", "GEMINI_API_KEY",
+                "CEREBRAS_API_KEY", "OPENROUTER_API_KEY",
+                "CONFIDENCE_THRESHOLD", "COMPANY_DOMAIN"]:
+        if key in st.secrets:
+            os.environ[key] = st.secrets[key]
+except Exception:
+    pass
 
 # ═════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
@@ -69,7 +77,7 @@ MODELS = {
     "resolution_fallback": os.getenv("MODEL_RESOLUTION_FALLBACK",  "llama-3.1-8b-instant"),
 
     # Qwen3 32B on Groq: replaces Mistral for judgment/escalation calls
-    "escalation_primary":  os.getenv("MODEL_ESCALATION_PRIMARY",   "qwen/qwen3-32b"),
+    "escalation_primary":  os.getenv("MODEL_ESCALATION_PRIMARY",   "llama-3.3-70b-versatile"),
     "escalation_fallback": os.getenv("MODEL_ESCALATION_FALLBACK",  "llama-3.3-70b-versatile"),
 }
 
@@ -347,7 +355,7 @@ def intake_agent(state: dict) -> dict:
     raw = call_llm(
         primary_client=groq_client,
         primary_model=MODELS["intake_primary"],
-        fallback_client=gemini_client,
+        fallback_client=groq_client,
         fallback_model=MODELS["intake_fallback"],
         system_prompt=system_prompt,
         user_message=user_message,
@@ -535,7 +543,7 @@ def resolution_agent(state: dict) -> dict:
     raw = call_llm(
         primary_client=groq_client,
         primary_model=MODELS["resolution_primary"],
-        fallback_client=gemini_client,
+        fallback_client=groq_client,
         fallback_model=MODELS["resolution_fallback"],
         system_prompt=system_prompt,
         user_message=user_message,
