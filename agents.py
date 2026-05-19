@@ -40,7 +40,7 @@ CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.75"))
 MODELS = {
     "intake_primary":      os.getenv("MODEL_INTAKE_PRIMARY",     "llama-3.3-70b-versatile"),
     "intake_fallback":     os.getenv("MODEL_INTAKE_FALLBACK",    "llama-3.3-70b-versatile"),
-    "diagnosis_primary":   os.getenv("MODEL_DIAGNOSIS_PRIMARY",  "models/gemini-2.5-flash"),
+    "diagnosis_primary":   os.getenv("MODEL_DIAGNOSIS_PRIMARY",  "gemini-2.5-flash"),
     "diagnosis_fallback":  os.getenv("MODEL_DIAGNOSIS_FALLBACK", "llama-3.3-70b-versatile"),
     "resolution_primary":  os.getenv("MODEL_RESOLUTION_PRIMARY", "llama-3.3-70b-versatile"),
     "resolution_fallback": os.getenv("MODEL_RESOLUTION_FALLBACK","llama-3.3-70b-versatile"),
@@ -90,25 +90,35 @@ def get_client(name: str) -> OpenAI:
     """
     if name not in _clients:
         if name == "groq":
+            if not os.getenv("GROQ_API_KEY"):
+                raise ValueError("GROQ_API_KEY is not configured")
             _clients[name] = OpenAI(
                 api_key=os.getenv("GROQ_API_KEY"),
                 base_url="https://api.groq.com/openai/v1",
             )
         elif name == "gemini":
+            if not os.getenv("GEMINI_API_KEY"):
+                raise ValueError("GEMINI_API_KEY is not configured")
             _clients[name] = OpenAI(
                 api_key=os.getenv("GEMINI_API_KEY"),
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
         elif name == "cerebras":
+            if not os.getenv("CEREBRAS_API_KEY"):
+                raise ValueError("CEREBRAS_API_KEY is not configured")
             _clients[name] = OpenAI(
                 api_key=os.getenv("CEREBRAS_API_KEY"),
                 base_url="https://api.cerebras.ai/v1",
             )
         elif name == "openrouter":
+            if not os.getenv("OPENROUTER_API_KEY"):
+                raise ValueError("OPENROUTER_API_KEY is not configured")
             _clients[name] = OpenAI(
                 api_key=os.getenv("OPENROUTER_API_KEY"),
                 base_url="https://openrouter.ai/api/v1",
             )
+        else:
+            raise ValueError(f"Unknown LLM provider: {name}")
     return _clients[name]
 
 
@@ -235,10 +245,8 @@ def call_llm(
     Calls the primary LLM by provider name and falls back on failure.
     Uses get_client() for lazy client instantiation.
     """
-    primary_client  = get_client(primary_name)
-    fallback_client = get_client(fallback_name)
-
     try:
+        primary_client = get_client(primary_name)
         response = primary_client.chat.completions.create(
             model=primary_model,
             messages=[
@@ -253,6 +261,7 @@ def call_llm(
     except Exception as primary_error:
         print(f"[FALLBACK] Primary LLM ({primary_model}) failed: {primary_error}")
         try:
+            fallback_client = get_client(fallback_name)
             response = fallback_client.chat.completions.create(
                 model=fallback_model,
                 messages=[

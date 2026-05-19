@@ -178,6 +178,18 @@ def confidence_label(score: float) -> str:
     return "🔴 Low — escalating"
 
 
+def stop_on_llm_error(agent_name: str, error: Exception) -> None:
+    """Shows a safe provider/config message instead of Streamlit's redacted crash."""
+    st.error(f"{agent_name} could not reach its configured LLM provider.")
+    st.info(
+        "Check your Streamlit secrets and model names. For this app, Diagnosis "
+        "uses Gemini first and Groq as fallback, so both `GEMINI_API_KEY` and "
+        "`GROQ_API_KEY` should be configured for full resilience."
+    )
+    st.code(str(error), language="text")
+    st.stop()
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # MAIN LAYOUT
 # ═════════════════════════════════════════════════════════════════════════════
@@ -305,7 +317,10 @@ if submit and ticket_text.strip():
                 # Intake
                 st.write("📋 Intake agent — classifying ticket...")
                 t = time.time()
-                state = intake_agent(state)
+                try:
+                    state = intake_agent(state)
+                except Exception as error:
+                    stop_on_llm_error("Intake agent", error)
                 timings["intake"] = round(time.time() - t, 2)
                 st.write(
                     f"✅ Intake — "
@@ -317,7 +332,10 @@ if submit and ticket_text.strip():
                 # Diagnosis
                 st.write("🔍 Diagnosis agent — analyzing root cause...")
                 t = time.time()
-                state = diagnosis_agent(state)
+                try:
+                    state = diagnosis_agent(state)
+                except Exception as error:
+                    stop_on_llm_error("Diagnosis agent", error)
                 timings["diagnosis"] = round(time.time() - t, 2)
                 conf = float(state["diagnosis"]["confidence"] or 0)
                 st.write(
@@ -330,7 +348,10 @@ if submit and ticket_text.strip():
                 # Resolution
                 st.write("⚙️ Resolution agent — selecting tools...")
                 t = time.time()
-                state = resolution_agent(state)
+                try:
+                    state = resolution_agent(state)
+                except Exception as error:
+                    stop_on_llm_error("Resolution agent", error)
                 timings["resolution"] = round(time.time() - t, 2)
                 tool_chain = state["resolution"].get("tool_chain") or []
                 tools_used = [s.get("tool") for s in tool_chain]
@@ -358,7 +379,10 @@ if submit and ticket_text.strip():
                 if state["resolution"]["status"] in ("escalated", "failed"):
                     st.write("👤 Escalation agent — preparing human handoff...")
                     t = time.time()
-                    state = escalation_agent(state)
+                    try:
+                        state = escalation_agent(state)
+                    except Exception as error:
+                        stop_on_llm_error("Escalation agent", error)
                     timings["escalation"] = round(time.time() - t, 2)
                     st.write(
                         f"✅ Escalated to {state['escalation']['team']} · "
